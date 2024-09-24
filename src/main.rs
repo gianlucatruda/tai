@@ -1,7 +1,7 @@
 use futures::stream::StreamExt;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use serde_json::{from_str, json, Value};
+use serde_json::json;
 use std::env;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -61,7 +61,7 @@ async fn do_get() -> Result<(), reqwest::Error> {
     let req = client
         .post("https://api.openai.com/v1/chat/completions")
         .json(&json!({
-            "model": "gpt-4o",
+            "model": "gpt-4o-mini",
             "messages": [
                 UserMessage {
                     role: Role::System,
@@ -69,7 +69,7 @@ async fn do_get() -> Result<(), reqwest::Error> {
                 },
                 UserMessage {
                     role: Role::User,
-                    content: String::from("Write a sonnet about Rust."),
+                    content: String::from("Write some Python code inside some Markdown discussing it."),
                 },
             ],
             "stream": streaming,
@@ -91,25 +91,17 @@ async fn do_get() -> Result<(), reqwest::Error> {
             let text = String::from_utf8_lossy(&bytes);
 
             for line in text.lines() {
-                if line.starts_with("data:") {
-                    let json_content = &line["data:".len()..];
+                if let Some(json_content) = &line.strip_prefix("data: ") {
                     // println!("received: {line:?}");
-                    let mut delta = match serde_json::from_str::<OpenAIResponse>(json_content) {
-                        Ok(delta) => delta,
-                        Err(e) => {
-                            // eprint!("Failed to deserialise: {e}\n{json_content:?}");
-                            break;
+                    if let Ok(mut data_chunk) = serde_json::from_str::<OpenAIResponse>(json_content)
+                    {
+                        if let Some(choice) = data_chunk.choices.pop() {
+                            if let Some(delta) = choice.delta {
+                                if let Some(con) = delta.content {
+                                    print!("{}", con);
+                                }
+                            }
                         }
-                    };
-                    match delta.choices.pop() {
-                        Some(c) => match c.delta {
-                            Some(d) => match d.content {
-                                Some(con) => print!("{}", con),
-                                _ => {}
-                            },
-                            _ => {}
-                        },
-                        _ => {}
                     }
                 }
             }
