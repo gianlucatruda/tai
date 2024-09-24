@@ -12,28 +12,36 @@ enum Role {
     System,
 }
 
-#[derive(Deserialize, Debug)]
-struct OpenAIMessage {
-    role: Role,
-    content: String,
-    refusal: Option<serde_json::Value>,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 struct UserMessage {
     role: Role,
     content: String,
 }
 
-#[derive(Deserialize, Debug)]
-struct Choice {
-    index: u64,
-    message: OpenAIMessage,
-    logprobs: Option<serde_json::Value>,
-    finish_reason: Option<serde_json::Value>,
+#[derive(Serialize, Deserialize, Debug)]
+struct OpenAIMessage {
+    role: Role,
+    content: String,
+    refusal: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
+struct OpenAIDelta {
+    role: Option<Role>,
+    content: Option<String>,
+    refusal: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Choice {
+    index: u64,
+    message: Option<OpenAIMessage>,
+    delta: Option<OpenAIDelta>,
+    logprobs: Option<serde_json::Value>,
+    finish_reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct OpenAIResponse {
     id: String,
     object: String,
@@ -41,7 +49,7 @@ struct OpenAIResponse {
     model: String,
     choices: Vec<Choice>,
     usage: Option<serde_json::Value>,
-    system_fingerprint: Option<serde_json::Value>,
+    system_fingerprint: String,
 }
 
 /// Basic POST request with headers to OpenAI's API
@@ -61,7 +69,7 @@ async fn do_get() -> Result<(), reqwest::Error> {
                 },
                 UserMessage {
                     role: Role::User,
-                    content: String::from("Are you an AI?"),
+                    content: String::from("Write a sonnet about Rust."),
                 },
             ],
             "stream": streaming,
@@ -69,12 +77,12 @@ async fn do_get() -> Result<(), reqwest::Error> {
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, "Bearer ".to_string() + &api_key);
 
-    println!("request: {req:?}");
+    // println!("request: {req:?}");
 
     let res = req.send().await?;
 
-    println!("Status: {}", res.status());
-    println!("Headers:\n{:#?}", res.headers());
+    // println!("Status: {}", res.status());
+    // println!("Headers:\n{:#?}", res.headers());
 
     if streaming {
         let mut stream = res.bytes_stream();
@@ -84,21 +92,38 @@ async fn do_get() -> Result<(), reqwest::Error> {
 
             for line in text.lines() {
                 if line.starts_with("data:") {
-                    println!("received: {line:?}");
                     let json_content = &line["data:".len()..];
-                    match serde_json::from_str::<OpenAIResponse>(json_content) {
-                        Ok(message) => println!("Received: {:?}", message),
-                        Err(e) => eprintln!("Failed to deserialise: {e}"),
+                    // println!("received: {line:?}");
+                    let mut delta = match serde_json::from_str::<OpenAIResponse>(json_content) {
+                        Ok(delta) => delta,
+                        Err(e) => {
+                            // eprint!("Failed to deserialise: {e}\n{json_content:?}");
+                            break;
+                        }
+                    };
+                    match delta.choices.pop() {
+                        Some(c) => match c.delta {
+                            Some(d) => match d.content {
+                                Some(con) => print!("{}", con),
+                                _ => {}
+                            },
+                            _ => {}
+                        },
+                        _ => {}
                     }
                 }
             }
         }
     } else {
         let body: String = res.text().await?;
-        println!("Body:\n{}", &body);
+        // println!("Body:\n{}", &body);
         let deserialised: OpenAIResponse = serde_json::from_str(&body).unwrap();
-        println!("Deserialised:\n{:?}", &deserialised);
-        println!("Latest message: {:?}", deserialised.choices[0].message);
+        // println!("Deserialised:\n{:?}", &deserialised);
+        let msg = &deserialised.choices[0].message;
+        match msg {
+            Some(m) => println!("Message:\n{}", m.content),
+            None => eprintln!("No message."),
+        }
     }
 
     Ok(())
