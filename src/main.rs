@@ -1,3 +1,4 @@
+use futures::stream::StreamExt;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, json, Value};
@@ -44,51 +45,67 @@ struct OpenAIResponse {
 }
 
 /// Basic POST request with headers to OpenAI's API
-fn do_get() -> Result<(), reqwest::Error> {
-    let api_key = match env::var("TAI_OPENAI_KEY") {
-        Ok(s) => s,
-        _ => panic!("`TAI_OPENAI_KEY` not set"),
-    };
+async fn do_get() -> Result<(), reqwest::Error> {
+    let streaming = true;
+    let api_key = env::var("TAI_OPENAI_KEY").expect("'TAI_OPENAI_KEY' not set");
 
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::new();
     let req = client
         .post("https://api.openai.com/v1/chat/completions")
-        .body(
-            json!({
-                "model": "gpt-4o",
-                "messages": [
-                    UserMessage {
-                        role: Role::System,
-                        content: String::from("You are a helpful AI assistant."),
-                    },
-                    UserMessage {
-                        role: Role::User,
-                        content: String::from("Are you an AI?"),
-                    },
-                ],
-            })
-            .to_string(),
-        )
+        .json(&json!({
+            "model": "gpt-4o",
+            "messages": [
+                UserMessage {
+                    role: Role::System,
+                    content: String::from("You are a helpful AI assistant."),
+                },
+                UserMessage {
+                    role: Role::User,
+                    content: String::from("Are you an AI?"),
+                },
+            ],
+            "stream": streaming,
+        }))
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, "Bearer ".to_string() + &api_key);
 
     println!("request: {req:?}");
 
-    let res = req.send()?;
+    let res = req.send().await?;
+
     println!("Status: {}", res.status());
     println!("Headers:\n{:#?}", res.headers());
-    let body: String = res.text()?;
-    println!("Body:\n{}", &body);
 
-    let deserialised: OpenAIResponse = serde_json::from_str(&body).unwrap();
-    println!("Deserialised:\n{:?}", &deserialised);
+    if streaming {
+        let mut stream = res.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk?;
+            let text = String::from_utf8_lossy(&bytes);
 
-    println!("Latest message: {:?}", deserialised.choices[0].message);
+            for line in text.lines() {
+                if line.starts_with("data:") {
+                    println!("received: {line:?}");
+                    let json_content = &line["data:".len()..];
+                    match serde_json::from_str::<OpenAIResponse>(json_content) {
+                        Ok(message) => println!("Received: {:?}", message),
+                        Err(e) => eprintln!("Failed to deserialise: {e}"),
+                    }
+                }
+            }
+        }
+    } else {
+        let body: String = res.text().await?;
+        println!("Body:\n{}", &body);
+        let deserialised: OpenAIResponse = serde_json::from_str(&body).unwrap();
+        println!("Deserialised:\n{:?}", &deserialised);
+        println!("Latest message: {:?}", deserialised.choices[0].message);
+    }
 
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     println!("TAI");
-    let _ = do_get();
+    let _ = do_get().await;
 }
