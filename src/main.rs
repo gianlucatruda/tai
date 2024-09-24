@@ -1,9 +1,9 @@
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use serde::Deserialize;
-use serde_json::{json, Value};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use serde::{Deserialize, Serialize};
+use serde_json::{from_str, json, Value};
 use std::env;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
 enum Role {
     Assistant,
@@ -16,6 +16,12 @@ struct OpenAIMessage {
     role: Role,
     content: String,
     refusal: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct UserMessage {
+    role: Role,
+    content: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -51,14 +57,14 @@ fn do_get() -> Result<(), reqwest::Error> {
             json!({
                 "model": "gpt-4o",
                 "messages": [
-                  {
-                    "role": "system",
-                    "content": "You are a helpful assistant."
-                  },
-                  {
-                    "role": "user",
-                    "content": "Hello!"
-                  }
+                    UserMessage {
+                        role: Role::System,
+                        content: String::from("You are a helpful AI assistant."),
+                    },
+                    UserMessage {
+                        role: Role::User,
+                        content: String::from("Are you an AI?"),
+                    },
                 ],
             })
             .to_string(),
