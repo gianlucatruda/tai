@@ -56,7 +56,7 @@ struct OpenAIResponse {
 async fn do_get() -> Result<(), reqwest::Error> {
     let streaming = true;
     let api_key = env::var("TAI_OPENAI_KEY").expect("'TAI_OPENAI_KEY' not set");
-    assert!(api_key.len() > 0);
+    assert!(!api_key.is_empty());
 
     let client = reqwest::Client::new();
     let req = client
