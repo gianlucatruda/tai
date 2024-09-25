@@ -127,3 +127,22 @@ async fn main() {
     println!("TAI");
     let _ = do_get().await;
 }
+
+// Unit tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_user_message() {
+        let user_message = UserMessage {
+            role: Role::User,
+            content: String::from("Write some Python code inside some Markdown discussing it."),
+        };
+        let json = serde_json::to_string(&user_message).unwrap();
+        assert_eq!(
+            json,
+            r#"{"role":"user","content":"Write some Python code inside some Markdown discussing it."}"#
+        );
+    }
+}
