@@ -54,48 +54,55 @@ struct OpenAIResponse {
 
 /// Make OpenAI completions request and return response
 async fn openai_request(
+    prompt: &str,
+    system_prompt: Option<&str>,
     client: reqwest::Client,
     api_key: &str,
     streaming: bool,
 ) -> Result<reqwest::Response, reqwest::Error> {
+    // Build messages
+    let mut messages = Vec::new();
+    if let Some(s) = system_prompt {
+        messages.push(UserMessage {
+            role: Role::System,
+            content: String::from(s),
+        });
+    }
+    messages.push(UserMessage {
+        role: Role::User,
+        content: String::from(prompt),
+    });
+    // Make request
     let req = client
         .post("https://api.openai.com/v1/chat/completions")
         .json(&json!({
             "model": "gpt-4o-mini",
-            "messages": [
-                UserMessage {
-                    role: Role::System,
-                    content: String::from("You are a helpful AI assistant."),
-                },
-                UserMessage {
-                    role: Role::User,
-                    content: String::from("Say hello to me in one sentence."),
-                },
-            ],
+            "messages": messages,
             "stream": streaming,
         }))
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, "Bearer ".to_string() + &api_key);
 
-    // println!("request: {req:?}");
-
-    // let res = req.send().await?;
-
-    // println!("Status: {}", res.status());
-    // println!("Headers:\n{:#?}", res.headers());
     Ok(req.send().await?)
 }
 
 /// Basic POST request with headers to OpenAI's API
 async fn do_get() -> Result<(), reqwest::Error> {
     // Load API key and set up client
-    let streaming = false;
+    let streaming = true;
     let api_key = env::var("TAI_OPENAI_KEY").expect("'TAI_OPENAI_KEY' not set");
     assert!(!api_key.is_empty());
 
     // Make one client and re-use it (if needed)
     let client = reqwest::Client::new();
-    let res = openai_request(client, &api_key, streaming).await?;
+    let res = openai_request(
+        "Say hello",
+        Some("You are a grumpy person"),
+        client,
+        &api_key,
+        streaming,
+    )
+    .await?;
 
     if streaming {
         let mut stream = res.bytes_stream();
@@ -121,9 +128,7 @@ async fn do_get() -> Result<(), reqwest::Error> {
         }
     } else {
         let body: String = res.text().await?;
-        // println!("Body:\n{}", &body);
         let deserialised: OpenAIResponse = serde_json::from_str(&body).unwrap();
-        // println!("Deserialised:\n{:?}", &deserialised);
         let msg = &deserialised.choices[0].message;
         match msg {
             Some(m) => println!("{}", m.content),
@@ -136,7 +141,6 @@ async fn do_get() -> Result<(), reqwest::Error> {
 
 #[tokio::main]
 async fn main() {
-    println!("TAI");
     let _ = do_get().await;
 }
 
