@@ -72,6 +72,7 @@ async fn openai_request(
         role: Role::User,
         content: String::from(prompt),
     });
+
     // Make request
     let req = client
         .post("https://api.openai.com/v1/chat/completions")
@@ -82,8 +83,46 @@ async fn openai_request(
         }))
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, "Bearer ".to_string() + &api_key);
-
     Ok(req.send().await?)
+}
+
+async fn streamed_openai_response(res: reqwest::Response) -> String {
+    let mut stream = res.bytes_stream();
+    let mut message_parts = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+
+        for line in text.lines() {
+            if let Some(json_content) = &line.strip_prefix("data: ") {
+                // println!("received: {line:?}");
+                if let Ok(mut data_chunk) = serde_json::from_str::<OpenAIResponse>(json_content) {
+                    if let Some(choice) = data_chunk.choices.pop() {
+                        if let Some(delta) = choice.delta {
+                            if let Some(con) = delta.content {
+                                message_parts.push(con.clone());
+                                print!("{}", con);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    println!();
+
+    return message_parts.join("");
+}
+
+async fn openai_response(res: reqwest::Response) -> String {
+    let body: String = res.text().await.unwrap();
+    let deserialised: OpenAIResponse = serde_json::from_str(&body).unwrap();
+    let oai_msg = &deserialised.choices[0].message;
+    oai_msg
+        .as_ref()
+        .expect("No message in response")
+        .content
+        .clone()
 }
 
 /// Basic POST request with headers to OpenAI's API
@@ -105,35 +144,11 @@ async fn do_get() -> Result<(), reqwest::Error> {
     .await?;
 
     if streaming {
-        let mut stream = res.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let bytes = chunk?;
-            let text = String::from_utf8_lossy(&bytes);
-
-            for line in text.lines() {
-                if let Some(json_content) = &line.strip_prefix("data: ") {
-                    // println!("received: {line:?}");
-                    if let Ok(mut data_chunk) = serde_json::from_str::<OpenAIResponse>(json_content)
-                    {
-                        if let Some(choice) = data_chunk.choices.pop() {
-                            if let Some(delta) = choice.delta {
-                                if let Some(con) = delta.content {
-                                    print!("{}", con);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let response_message = streamed_openai_response(res).await;
+        // println!("DEBUG: {response_message}");
     } else {
-        let body: String = res.text().await?;
-        let deserialised: OpenAIResponse = serde_json::from_str(&body).unwrap();
-        let msg = &deserialised.choices[0].message;
-        match msg {
-            Some(m) => println!("{}", m.content),
-            None => eprintln!("No message."),
-        }
+        let response_message = openai_response(res).await;
+        println!("{response_message}");
     }
 
     Ok(())
