@@ -52,13 +52,12 @@ struct OpenAIResponse {
     system_fingerprint: String,
 }
 
-/// Basic POST request with headers to OpenAI's API
-async fn do_get() -> Result<(), reqwest::Error> {
-    let streaming = true;
-    let api_key = env::var("TAI_OPENAI_KEY").expect("'TAI_OPENAI_KEY' not set");
-    assert!(!api_key.is_empty());
-
-    let client = reqwest::Client::new();
+/// Make OpenAI completions request and return response
+async fn openai_request(
+    client: reqwest::Client,
+    api_key: &str,
+    streaming: bool,
+) -> Result<reqwest::Response, reqwest::Error> {
     let req = client
         .post("https://api.openai.com/v1/chat/completions")
         .json(&json!({
@@ -70,7 +69,7 @@ async fn do_get() -> Result<(), reqwest::Error> {
                 },
                 UserMessage {
                     role: Role::User,
-                    content: String::from("Write some Python code inside some Markdown discussing it."),
+                    content: String::from("Say hello to me in one sentence."),
                 },
             ],
             "stream": streaming,
@@ -80,10 +79,23 @@ async fn do_get() -> Result<(), reqwest::Error> {
 
     // println!("request: {req:?}");
 
-    let res = req.send().await?;
+    // let res = req.send().await?;
 
     // println!("Status: {}", res.status());
     // println!("Headers:\n{:#?}", res.headers());
+    Ok(req.send().await?)
+}
+
+/// Basic POST request with headers to OpenAI's API
+async fn do_get() -> Result<(), reqwest::Error> {
+    // Load API key and set up client
+    let streaming = false;
+    let api_key = env::var("TAI_OPENAI_KEY").expect("'TAI_OPENAI_KEY' not set");
+    assert!(!api_key.is_empty());
+
+    // Make one client and re-use it (if needed)
+    let client = reqwest::Client::new();
+    let res = openai_request(client, &api_key, streaming).await?;
 
     if streaming {
         let mut stream = res.bytes_stream();
@@ -114,7 +126,7 @@ async fn do_get() -> Result<(), reqwest::Error> {
         // println!("Deserialised:\n{:?}", &deserialised);
         let msg = &deserialised.choices[0].message;
         match msg {
-            Some(m) => println!("Message:\n{}", m.content),
+            Some(m) => println!("{}", m.content),
             None => eprintln!("No message."),
         }
     }
