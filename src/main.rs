@@ -1,5 +1,4 @@
 use std::env;
-use tai;
 
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {

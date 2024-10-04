@@ -81,8 +81,8 @@ pub async fn openai_request(
             "stream": streaming,
         }))
         .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, "Bearer ".to_string() + &api_key);
-    Ok(req.send().await?)
+        .header(AUTHORIZATION, "Bearer ".to_string() + api_key);
+    req.send().await
 }
 
 pub async fn streamed_openai_response(res: reqwest::Response) -> String {
@@ -110,7 +110,7 @@ pub async fn streamed_openai_response(res: reqwest::Response) -> String {
     }
     println!();
 
-    return message_parts.join("");
+    message_parts.join("")
 }
 
 pub async fn openai_response(res: reqwest::Response) -> String {
